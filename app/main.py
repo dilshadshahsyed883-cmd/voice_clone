@@ -17,7 +17,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference
-from app.telemetry import JobTelemetry
 from app.job_telemetry import ResourceRecorder
 
 JOB_DIR = Path(os.getenv("QWEN_JOB_DIR", "/data/jobs"))
@@ -88,15 +87,16 @@ async def _worker(load_task: asyncio.Task):
             else:
                 record.update(state="running", started_at=time.time())
                 _save(job_id)
-                monitor = JobTelemetry(_job_path(job_id))
                 try:
-                    with ResourceRecorder(job_id, _job_path(job_id)), monitor:
+                    with ResourceRecorder(job_id, _job_path(job_id)):
                         metrics = await asyncio.to_thread(_render, job_id)
                     record.update(state="completed", finished_at=time.time(), metrics=metrics)
                 except Exception as exc:
                     record.update(state="failed", finished_at=time.time(), error=f"{type(exc).__name__}: {exc}")
                 finally:
-                    record["resources"] = monitor.summary()
+                    summary_path = _job_path(job_id) / "resource_usage.json"
+                    if summary_path.is_file():
+                        record["resources"] = json.loads(summary_path.read_text(encoding="utf-8"))
                     (_job_path(job_id) / "request.json").unlink(missing_ok=True)
             _save(job_id)
         finally:
@@ -203,7 +203,17 @@ def get_job_resources(job_id: str, _: None = Depends(require_token)):
     folder = _job_path(job_id)
     if job_id not in jobs:
         raise HTTPException(404, "job not found")
-    path = folder / "resources.json"
-    if not path.is_file():
-        return {"job_id": job_id, "state": jobs[job_id]["state"], "resources": None}
-    return {"job_id": job_id, "resources": json.loads(path.read_text(encoding="utf-8"))}
+    summary = folder / "resource_usage.json"
+    if summary.is_file():
+        return {"job_id": job_id, "resources": json.loads(summary.read_text(encoding="utf-8"))}
+    attempts = sorted((folder / "telemetry").glob("attempt-*/samples.jsonl"))
+    if attempts:
+        # A concurrent append may leave an incomplete final line. Return the
+        # newest complete sample rather than reporting a spurious API error.
+        for line in reversed(attempts[-1].read_text(encoding="utf-8").splitlines()):
+            try:
+                return {"job_id": job_id, "state": jobs[job_id]["state"],
+                        "latest_sample": json.loads(line)}
+            except ValueError:
+                continue
+    return {"job_id": job_id, "state": jobs[job_id]["state"], "resources": None}

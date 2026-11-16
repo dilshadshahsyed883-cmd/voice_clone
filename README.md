@@ -88,21 +88,23 @@ and inspect output before a production deployment. Endpoints are not compatible
 with the old OmniVoice worker without an adapter.
 
 
-## Per-job resource and speed diagnostics
 
-During inference, each job persists `resources.json` (live/final summary) and
-`resource-samples.jsonl` (timestamped process CPU/RSS and device-wide
-NVIDIA GPU utilization/VRAM). If `nvidia-smi` is absent, GPU samples are null
-without blocking synthesis. Reported GPU VRAM includes other GPU processes.
+## Per-job performance and resource tracking
 
-From a Salad/container terminal, including after the job finishes:
+A single recorder now captures timestamped CPU/RAM/disk IO (container-wide)
+and NVIDIA GPU/VRAM/power (device-wide) during each job. Final data is
+retained at `/data/jobs/<job-id>/resource_usage.json`; each attempt has
+`telemetry/attempt-*/samples.jsonl`. Missing GPU sensors never block audio.
+
+Use the Salad/container terminal to query a finished job or inspect
+ongoing resource usage:
 
 ```bash
-python -m app.telemetry YOUR_32_CHARACTER_JOB_ID --job-dir /data/jobs --samples 5
+python -m app.job_telemetry YOUR_JOB_ID --root /data/jobs --json
+python -m app.job_telemetry YOUR_JOB_ID --root /data/jobs --follow
 ```
 
 Authenticated API: `GET /v1/jobs/{job_id}/resources`.
-The standard `GET /v1/jobs/{job_id}` also retains final resource summary
-alongside audio duration, generation seconds, real-time factor and speed.
-Jobs retain only request metadata and output after finishing; submitted
-base64 reference audio is not retained on failures.
+Job status also retains resource summaries, audio duration,
+generation seconds, realtime factor and speed factor.
+Original base64 reference audio is cleared after completed and failed jobs.
