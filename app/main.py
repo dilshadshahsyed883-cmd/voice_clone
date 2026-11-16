@@ -80,8 +80,8 @@ async def _initialize_runtime() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await jobs.start()
     load_task = asyncio.create_task(_initialize_runtime(), name="omnivoice-model-loader")
+    await jobs.start(load_task)
     yield
     if not load_task.done():
         load_task.cancel()
