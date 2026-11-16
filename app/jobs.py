@@ -37,6 +37,12 @@ class JobRecord:
     def public(self) -> dict:
         data = asdict(self)
         data.pop("ref_path", None)
+        report = settings.jobs_dir / self.id / "resource_usage.json"
+        if report.is_file():
+            try:
+                data["resources"] = json.loads(report.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data["resources"] = None
         data["audio_ready"] = bool(
             self.state == "completed" and self.output_path and Path(self.output_path).is_file()
         )

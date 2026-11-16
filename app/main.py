@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import time
 import uuid
 from pathlib import Path
@@ -89,7 +90,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="OmniVoice GPU Runtime",
-    version="0.1.0",
+    version="0.1.3",
     lifespan=lifespan,
 )
 
@@ -110,6 +111,7 @@ def root() -> dict:
     }
 
 
+@app.get("/health")
 @app.get("/healthz")
 def healthz() -> dict:
     return {
@@ -120,6 +122,7 @@ def healthz() -> dict:
     }
 
 
+@app.get("/ready")
 @app.get("/readyz")
 def readyz() -> Response:
     payload = runtime.diagnostics()
@@ -128,6 +131,7 @@ def readyz() -> Response:
     return JSONResponse(status_code=503, content=payload)
 
 
+@app.get("/runtime")
 @app.get("/runtimez")
 def runtimez(_: None = Depends(require_token)) -> dict:
     return runtime.diagnostics()
@@ -372,3 +376,29 @@ def get_job_audio(job_id: str, _: None = Depends(require_token)) -> FileResponse
     if job.state != "completed" or not job.output_path:
         raise HTTPException(status_code=409, detail=f"job state is {job.state}")
     return FileResponse(job.output_path, media_type="audio/wav", filename=f"{job_id}.wav")
+
+
+@app.get("/v1/jobs/{job_id}/resources")
+def get_job_resources(job_id: str, _: None = Depends(require_token)) -> dict:
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    folder = settings.jobs_dir / job_id
+    report = folder / "resource_usage.json"
+    if report.is_file():
+        try:
+            return {"job_id": job_id, "state": job.state,
+                    "resources": json.loads(report.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            pass
+    attempts = sorted((folder / "telemetry").glob("attempt-*/samples.jsonl"))
+    for attempt in reversed(attempts):
+        try:
+            for line in reversed(attempt.read_text(encoding="utf-8").splitlines()):
+                try:
+                    return {"job_id": job_id, "state": job.state, "latest_sample": json.loads(line)}
+                except ValueError:
+                    continue
+        except OSError:
+            continue
+    return {"job_id": job_id, "state": job.state, "resources": None}
