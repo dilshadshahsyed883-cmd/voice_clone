@@ -36,6 +36,7 @@ print('Qwen3-TTS-0.6B weights packaged locally')
 PY
 
 COPY app /app/app
+COPY scripts /app/scripts
 RUN mkdir -p /data/jobs && chmod 700 /data/jobs
 EXPOSE 8000
 HEALTHCHECK NONE

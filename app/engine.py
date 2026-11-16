@@ -136,6 +136,9 @@ class QwenEngine:
             full = np.concatenate(samples)
             output.parent.mkdir(parents=True, exist_ok=True)
             sf.write(output, full, sample_rate, subtype="PCM_16")
+            # CUDA kernels are asynchronous: synchronize before reporting RTF.
+            if self.torch is not None and self.torch.cuda.is_available():
+                self.torch.cuda.synchronize()
             generation_seconds = time.perf_counter() - started
         duration = len(full) / sample_rate
         return {

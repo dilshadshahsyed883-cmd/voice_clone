@@ -133,7 +133,7 @@ async def lifespan(_: FastAPI):
         await asyncio.gather(worker_task, load_task, return_exceptions=True)
 
 
-app = FastAPI(title="Qwen3-TTS 0.6B Clone GPU", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Qwen3-TTS 0.6B Clone GPU", version="0.1.1", lifespan=lifespan)
 
 
 @app.get("/health")

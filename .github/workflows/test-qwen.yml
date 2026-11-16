@@ -21,9 +21,11 @@ jobs:
       - name: Install lightweight test dependencies
         run: python -m pip install pytest fastapi==0.115.12 httpx numpy==1.26.4 soundfile==0.13.1
       - name: Compile Python
-        run: python -m compileall -q app tests
+        run: python -m compileall -q app tests scripts
       - name: Run CPU-safe tests
         run: PYTHONPATH=. pytest -q tests
+      - name: Validate repeatable live smoke command
+        run: python scripts/smoke_inference.py --help >/dev/null
       - name: Assert image bundles model and avoids CPU fallback
         run: |
           grep -q "snapshot_download" Dockerfile
