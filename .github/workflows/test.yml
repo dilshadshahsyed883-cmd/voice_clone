@@ -17,11 +17,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install unit-test dependencies
-        run: python -m pip install --disable-pip-version-check pytest numpy soundfile
+        run: python -m pip install --disable-pip-version-check pytest numpy soundfile fastapi==0.115.12 httpx
       - name: Compile source
-        run: python -m compileall -q app scripts
+        run: python -m compileall -q app scripts tests
       - name: Verify standalone verifier import path
         run: python scripts/verify_model.py --help
+      - name: Check real-inference CLI syntax
+        run: python scripts/smoke_inference.py --help >/dev/null
       - name: Verify Docker image has no embedded healthcheck
         run: |
           grep -qx 'HEALTHCHECK NONE' Dockerfile
