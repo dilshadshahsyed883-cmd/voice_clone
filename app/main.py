@@ -16,7 +16,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference\nfrom app.telemetry import JobTelemetry
+from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference
+from app.telemetry import JobTelemetry
 
 JOB_DIR = Path(os.getenv("QWEN_JOB_DIR", "/data/jobs"))
 API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
