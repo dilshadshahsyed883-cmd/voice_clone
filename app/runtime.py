@@ -256,7 +256,8 @@ class OmniRuntime:
             try:
                 metadata = json.loads(meta_path.read_text(encoding="utf-8"))
                 if isinstance(metadata, dict):
-                    info.update(metadata)
+                    info.update({k: v for k, v in metadata.items()
+                                 if k not in {"voice_id", "bytes", "sha256", "cached"}})
             except Exception:
                 info["metadata_error"] = "invalid metadata sidecar"
         return info
@@ -492,14 +493,13 @@ class OmniRuntime:
         tmp_path.replace(destination)
         with self._state_lock:
             self._voice_cache[normalized] = prompt
-        if metadata:
-            safe_metadata = dict(metadata)
-            safe_metadata.pop("voice_id", None)
-            safe_metadata.pop("bytes", None)
-            safe_metadata.pop("cached", None)
-            safe_metadata["updated_at"] = time.time()
-            safe_metadata.setdefault("created_at", safe_metadata["updated_at"])
-            self._write_voice_metadata(normalized, safe_metadata)
+        # Clear the previous sidecar even on imports without metadata.
+        safe_metadata = {k: v for k, v in dict(metadata or {}).items()
+                         if k not in {"voice_id", "bytes", "sha256", "cached", "updated_at"}}
+        safe_metadata.setdefault("profile_type", "imported")
+        safe_metadata["updated_at"] = time.time()
+        safe_metadata.setdefault("created_at", safe_metadata["updated_at"])
+        self._write_voice_metadata(normalized, safe_metadata)
         return self.voice_profile_info(normalized)
 
     def export_voice_profile(self, voice_id: str) -> bytes:
