@@ -1,0 +1,31 @@
+name: qwen-unit-tests
+
+on:
+  push:
+    branches:
+      - engine/qwen3-tts-0.6b
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lightweight test dependencies
+        run: python -m pip install pytest fastapi==0.115.12 httpx numpy==1.26.4 soundfile==0.13.1
+      - name: Compile Python
+        run: python -m compileall -q app tests
+      - name: Run CPU-safe tests
+        run: PYTHONPATH=. pytest -q tests
+      - name: Assert image bundles model and avoids CPU fallback
+        run: |
+          grep -q "snapshot_download" Dockerfile
+          grep -q "HF_HUB_OFFLINE=1" Dockerfile
+          grep -q "CPU fallback disabled" app/engine.py
