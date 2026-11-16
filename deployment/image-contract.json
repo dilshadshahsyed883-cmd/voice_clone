@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "policy": "one-stable-web-control-and-one-stable-salad-container-per-repository",
+  "repository": "dilshadshahsyed883-cmd/voice_clone",
+  "project": "voice_clone",
+  "source_branch": "feature/omnivoice-voice-profiles-v1",
+  "branch_role": "feature",
+  "engine": null,
+  "web_control_slot": "vps1:voice_clone",
+  "salad_container_slot": "salad:voice_clone",
+  "container_port": 8000,
+  "health_path": "/health",
+  "deployment_mode": "explicit_image_swap_only",
+  "image": null
+}
