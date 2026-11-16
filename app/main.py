@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference
 from app.telemetry import JobTelemetry
+from app.job_telemetry import ResourceRecorder
 
 JOB_DIR = Path(os.getenv("QWEN_JOB_DIR", "/data/jobs"))
 API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
@@ -89,7 +90,7 @@ async def _worker(load_task: asyncio.Task):
                 _save(job_id)
                 monitor = JobTelemetry(_job_path(job_id))
                 try:
-                    with monitor:
+                    with ResourceRecorder(job_id, _job_path(job_id)), monitor:
                         metrics = await asyncio.to_thread(_render, job_id)
                     record.update(state="completed", finished_at=time.time(), metrics=metrics)
                 except Exception as exc:
