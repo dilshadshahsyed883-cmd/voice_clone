@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "policy": "one-stable-web-control-and-one-stable-salad-container-per-repository",
+  "repository": "dilshadshahsyed883-cmd/voice_clone",
+  "project": "voice_clone",
+  "source_branch": "build/omnivoice-runtime-v0.1.0",
+  "branch_role": "model",
+  "engine": "omnivoice",
+  "web_control_slot": "vps1:voice_clone",
+  "salad_container_slot": "salad:voice_clone",
+  "container_port": 8000,
+  "health_path": "/health",
+  "deployment_mode": "explicit_image_swap_only",
+  "image": {
+    "repository": "ghcr.io/dilshadshahsyed883-cmd/voice_clone",
+    "tag_prefix": "candidate-",
+    "sha_chars": 7,
+    "workflow": ".github/workflows/build-ghcr.yml"
+  }
+}
