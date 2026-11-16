@@ -13,7 +13,7 @@
   "deployment_mode": "explicit_image_swap_only",
   "image": {
     "repository": "ghcr.io/dilshadshahsyed883-cmd/voice_clone",
-    "tag_prefix": "candidate-",
+    "tag_prefix": "omnivoice-runtime-v0.1.3-",
     "sha_chars": 7,
     "workflow": ".github/workflows/build-ghcr.yml"
   }
