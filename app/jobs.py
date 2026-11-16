@@ -5,6 +5,7 @@ from app.job_telemetry import ResourceRecorder
 import asyncio
 import base64
 import json
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -48,19 +49,68 @@ class JobManager:
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.worker_task: asyncio.Task | None = None
 
-    async def start(self) -> None:
+    async def start(self, load_task: asyncio.Task | None = None) -> None:
+        if not self.jobs:
+            self._restore()
         if self.worker_task is None or self.worker_task.done():
-            self.worker_task = asyncio.create_task(self._worker(), name="omnivoice-job-worker")
+            self.worker_task = asyncio.create_task(
+                self._worker(load_task), name="omnivoice-job-worker"
+            )
 
     def get(self, job_id: str) -> JobRecord | None:
         return self.jobs.get(job_id)
 
+    def _restore(self) -> None:
+        """Restore terminal records and safely requeue interrupted jobs."""
+        for path in settings.jobs_dir.glob("*/job.json"):
+            job_id = path.parent.name
+            if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+                continue
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+                if row.get("id") != job_id or not isinstance(row.get("request"), dict):
+                    continue
+                # Only read fields we own. Never trust persisted paths or
+                # arbitrary JSON keys from older job schema versions.
+                job = JobRecord(
+                    id=job_id, state=str(row["state"]),
+                    created_at=float(row["created_at"]),
+                    updated_at=float(row["updated_at"]),
+                    request=row["request"],
+                    result=row.get("result"), error=row.get("error"),
+                    output_path=str(path.parent / "output.wav"),
+                    ref_path=str(path.parent / "reference.wav")
+                    if (path.parent / "reference.wav").is_file() else None,
+                    history=row.get("history") if isinstance(row.get("history"), list) else [],
+                )
+                if job.state in ("running", "queued"):
+                    request = job.request
+                    needs_ref = request.get("mode", "clone") == "clone" and not request.get("voice_id")
+                    if not str(request.get("text") or "").strip() or (needs_ref and not job.ref_path):
+                        job.state = "failed"
+                        job.error = "request or reference audio unavailable after restart"
+                    else:
+                        job.state = "queued"
+                        job.error = None
+                        self.queue.put_nowait(job_id)
+                    job.updated_at = time.time()
+                    job.history.append({"state": job.state, "at": job.updated_at,
+                                        "reason": "worker restart"})
+                self.jobs[job_id] = job
+                self._persist(job)
+            except (ValueError, TypeError, KeyError, OSError):
+                # A damaged record cannot stop unrelated jobs recovering.
+                continue
+
     def _persist(self, job: JobRecord) -> None:
         job_dir = settings.jobs_dir / job.id
         job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "job.json").write_text(
+        target = job_dir / "job.json"
+        temporary = job_dir / "job.json.tmp"
+        temporary.write_text(
             json.dumps(job.public(), ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        temporary.replace(target)
 
     async def submit(self, payload: dict) -> JobRecord:
         text = str(payload.get("text") or "")
@@ -130,7 +180,10 @@ class JobManager:
         await self.queue.put(job_id)
         return job
 
-    async def _worker(self) -> None:
+    async def _worker(self, load_task: asyncio.Task | None = None) -> None:
+        # Recovered queued jobs wait for asynchronous GPU model initialization.
+        if load_task is not None:
+            await load_task
         while True:
             job_id = await self.queue.get()
             job = self.jobs[job_id]
@@ -168,6 +221,10 @@ class JobManager:
                     {"state": "failed", "at": job.updated_at, "error": job.error}
                 )
             finally:
+                if job.state in ("completed", "failed") and job.ref_path:
+                    # Do not retain the uploaded WAV once a job is terminal.
+                    Path(job.ref_path).unlink(missing_ok=True)
+                    job.ref_path = None
                 self._persist(job)
                 self.queue.task_done()
 
