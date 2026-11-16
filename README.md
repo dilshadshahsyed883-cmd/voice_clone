@@ -86,3 +86,23 @@ A unit-test pass or pushed image **does not** prove GPU audio quality or
 generation speed. Run real 30-second and 5-minute tests on the target Salad GPU
 and inspect output before a production deployment. Endpoints are not compatible
 with the old OmniVoice worker without an adapter.
+
+
+## Per-job resource and speed diagnostics
+
+During inference, each job persists `resources.json` (live/final summary) and
+`resource-samples.jsonl` (timestamped process CPU/RSS and device-wide
+NVIDIA GPU utilization/VRAM). If `nvidia-smi` is absent, GPU samples are null
+without blocking synthesis. Reported GPU VRAM includes other GPU processes.
+
+From a Salad/container terminal, including after the job finishes:
+
+```bash
+python -m app.telemetry YOUR_32_CHARACTER_JOB_ID --job-dir /data/jobs --samples 5
+```
+
+Authenticated API: `GET /v1/jobs/{job_id}/resources`.
+The standard `GET /v1/jobs/{job_id}` also retains final resource summary
+alongside audio duration, generation seconds, real-time factor and speed.
+Jobs retain only request metadata and output after finishing; submitted
+base64 reference audio is not retained on failures.

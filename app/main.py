@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference
+from app.engine import MODEL_DIR, SUPPORTED, engine, split_text, validate_reference\nfrom app.telemetry import JobTelemetry
 
 JOB_DIR = Path(os.getenv("QWEN_JOB_DIR", "/data/jobs"))
 API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
@@ -73,22 +73,29 @@ def _render(job_id: str) -> dict:
         reference.unlink(missing_ok=True)
 
 
-async def _worker():
+async def _worker(load_task: asyncio.Task):
+    # Restored jobs must not fail merely because model initialization is ongoing.
+    await load_task
     while True:
         job_id = await queue.get()
         try:
             record = jobs[job_id]
             if not engine.ready:
                 record.update(state="failed", error=engine.error or "GPU model not ready", finished_at=time.time())
+                (_job_path(job_id) / "request.json").unlink(missing_ok=True)
             else:
                 record.update(state="running", started_at=time.time())
                 _save(job_id)
+                monitor = JobTelemetry(_job_path(job_id))
                 try:
-                    metrics = await asyncio.to_thread(_render, job_id)
+                    with monitor:
+                        metrics = await asyncio.to_thread(_render, job_id)
                     record.update(state="completed", finished_at=time.time(), metrics=metrics)
-                    (JOB_DIR / job_id / "request.json").unlink(missing_ok=True)
                 except Exception as exc:
                     record.update(state="failed", finished_at=time.time(), error=f"{type(exc).__name__}: {exc}")
+                finally:
+                    record["resources"] = monitor.summary()
+                    (_job_path(job_id) / "request.json").unlink(missing_ok=True)
             _save(job_id)
         finally:
             queue.task_done()
@@ -115,7 +122,7 @@ async def lifespan(_: FastAPI):
         except (ValueError, OSError, KeyError):
             continue
     load_task = asyncio.create_task(asyncio.to_thread(engine.load))
-    worker_task = asyncio.create_task(_worker())
+    worker_task = asyncio.create_task(_worker(load_task))
     try:
         yield
     finally:
@@ -164,7 +171,7 @@ async def create_job(req: CloneRequest, _: None = Depends(require_token)):
     folder.mkdir(parents=True, exist_ok=False)
     (folder / "request.json").write_text(json.dumps(req.model_dump()), encoding="utf-8")
     jobs[job_id] = {"job_id": job_id, "state": "queued", "created_at": time.time(),
-                    "language": req.language, "metrics": None, "error": None}
+                    "language": req.language, "metrics": None, "resources": None, "error": None}
     _save(job_id)
     await queue.put(job_id)
     return {"job_id": job_id, "state": "queued"}
@@ -187,3 +194,14 @@ def get_audio(job_id: str, _: None = Depends(require_token)):
     if not output.is_file():
         raise HTTPException(404, "audio file missing")
     return FileResponse(output, media_type="audio/wav", filename=f"{job_id}.wav")
+
+
+@app.get("/v1/jobs/{job_id}/resources")
+def get_job_resources(job_id: str, _: None = Depends(require_token)):
+    folder = _job_path(job_id)
+    if job_id not in jobs:
+        raise HTTPException(404, "job not found")
+    path = folder / "resources.json"
+    if not path.is_file():
+        return {"job_id": job_id, "state": jobs[job_id]["state"], "resources": None}
+    return {"job_id": job_id, "resources": json.loads(path.read_text(encoding="utf-8"))}
