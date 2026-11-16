@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.job_telemetry import ResourceRecorder
+
 import asyncio
 import base64
 import json
@@ -11,6 +13,11 @@ from pathlib import Path
 from app.audio_validation import validate_reference_wav
 from app.config import SUPPORTED_LANGUAGES, settings
 from app.runtime import runtime
+
+
+def _generate_recorded(job_id: str, **kwargs):
+    with ResourceRecorder(job_id, settings.jobs_dir / job_id):
+        return runtime.generate(**kwargs)
 
 
 @dataclass
@@ -137,7 +144,7 @@ class JobManager:
 
                 request = job.request
                 result = await asyncio.to_thread(
-                    runtime.generate,
+                    _generate_recorded, job_id,
                     text=request["text"],
                     output_path=Path(job.output_path),
                     mode=request.get("mode", "clone"),
