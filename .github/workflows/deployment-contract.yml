@@ -2,11 +2,17 @@ name: Shared Salad image contract (no deployment)
 on:
   push:
     branches: ['main']
+  pull_request:
+    branches: ['main']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: voice-clone-contract-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,4 +20,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Enforce stable web-control/container slots and branch image
-        run: python3 scripts/resolve_salad_image.py --validate --branch "$GITHUB_REF_NAME"
+        env:
+          CONTRACT_BRANCH: ${{ github.base_ref || github.ref_name }}
+        run: python3 scripts/resolve_salad_image.py --validate --branch "$CONTRACT_BRANCH"
